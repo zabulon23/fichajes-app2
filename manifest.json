@@ -2,8 +2,8 @@
   "name": "Seguimiento de fichajes",
   "short_name": "Fichajes",
   "description": "App para registrar entrada, salida, horas trabajadas y horas extra.",
-  "start_url": "./index.html",
-  "scope": "./",
+  "start_url": "/fichajes-app2/",
+  "scope": "/fichajes-app2/"
   "display": "standalone",
   "background_color": "#f8fafc",
   "theme_color": "#0f172a",
