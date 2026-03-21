@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#0f172a" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="Fichajes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <title>Fichajes Diario</title>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="apple-touch-icon" href="icons/icon-192.svg" />
+  <style>
+    :root{
+      --bg:#f8fafc; --card:#ffffff; --text:#0f172a; --muted:#64748b; --line:#e2e8f0;
+      --primary:#0f172a; --soft:#f1f5f9; --danger:#b91c1c; --ok:#166534; --warn:#92400e;
+      --shadow:0 8px 30px rgba(15,23,42,.08); --radius:22px;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--text)}
+    .wrap{max-width:720px;margin:0 auto;padding:16px 16px 28px}
+    .title{margin:6px 0 4px;font-size:clamp(1.8rem,4vw,2.4rem);line-height:1.1;font-weight:800}
+    .subtitle{color:var(--muted);margin:0 0 18px;font-size:.98rem}
+    .card{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);padding:16px;margin-bottom:14px;border:1px solid rgba(226,232,240,.9)}
+    .row{display:grid;gap:12px}.row-2{grid-template-columns:1fr 1fr}.row-3{grid-template-columns:repeat(3,1fr)}.row-4{grid-template-columns:repeat(4,1fr)}
+    @media (max-width:640px){.row-2,.row-3,.row-4{grid-template-columns:1fr}}
+    .label{color:var(--muted);font-size:.86rem;margin-bottom:6px}
+    .value{font-size:1.15rem;font-weight:700}
+    .small{font-size:.83rem;color:var(--muted)}
+    .pill{display:inline-flex;align-items:center;gap:8px;border-radius:999px;padding:8px 12px;font-size:.9rem;font-weight:600;background:var(--soft)}
+    .ok{color:var(--ok)} .warn{color:var(--warn)}
+    .btn{appearance:none;border:none;border-radius:18px;padding:15px 16px;font-size:1rem;font-weight:700;cursor:pointer;width:100%;transition:.15s transform ease,.15s opacity ease,.15s background ease}
+    .btn:active{transform:scale(.99)} .btn-primary{background:var(--primary);color:white} .btn-secondary{background:white;color:var(--primary);border:1px solid var(--line)} .btn-danger{background:#fff1f2;color:var(--danger);border:1px solid #fecdd3}
+    .btn-install{background:#0f172a;color:#fff}
+    .btn-install[hidden]{display:none !important}
+    input,select{width:100%;border:1px solid var(--line);background:white;border-radius:16px;padding:13px 14px;font-size:1rem;color:var(--text)}
+    .section-title{margin:0 0 12px;font-size:1.15rem;font-weight:800}
+    .stats{background:var(--soft);border-radius:18px;padding:14px;border:1px solid var(--line)}
+    .tabs{display:flex;gap:8px;margin-bottom:14px}
+    .tab{flex:1;text-align:center;border:none;border-radius:16px;padding:12px;background:white;border:1px solid var(--line);font-weight:700;cursor:pointer}
+    .tab.active{background:var(--primary);color:white;border-color:var(--primary)}
+    .hidden{display:none}
+    .entry{border:1px solid var(--line);border-radius:18px;padding:14px;margin-bottom:10px;background:white}
+    .entry-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:10px}
+    .entry-date{font-weight:800;font-size:1rem}
+    .entry-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+    @media (max-width:640px){.entry-grid{grid-template-columns:1fr}}
+    .muted{color:var(--muted)}
+    .footer-note{text-align:center;color:var(--muted);font-size:.83rem;margin-top:8px}
+    .inline-actions{display:flex;gap:10px;flex-wrap:wrap}.inline-actions>*{flex:1}
+    .install-box{margin-top:10px;padding:14px;border-radius:16px;background:#ecfeff;border:1px solid #bae6fd;color:#0c4a6e}
+    .install-title{font-weight:800;margin-bottom:6px}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1 class="title">Seguimiento de fichajes</h1>
+    <p class="subtitle">Marca tu entrada y salida con un toque, calcula horas extras y revisa tu resumen mensual.</p>
+
+    <div class="card">
+      <div class="row row-2">
+        <div>
+          <div class="label">Horario objetivo</div>
+          <div class="value">L-J 08:30–17:00 · V 08:00–15:00</div>
+          <div class="small" style="margin-top:6px;">La app calcula automáticamente las horas objetivo según el día de la semana.</div>
+        </div>
+        <div>
+          <div class="label">Estado de hoy</div>
+          <div id="todayStatus" class="pill">Pendiente de entrada</div>
+          <div class="small" style="margin-top:8px;" id="todayDate"></div>
+        </div>
+      </div>
+
+      <div class="install-box" id="installBox">
+        <div class="install-title">Instalar la app</div>
+        <div class="small" id="installText" style="font-size:.92rem;color:#0c4a6e;margin-bottom:10px;">
+          Si tu navegador lo permite, puedes instalarla con el botón de abajo. Si no aparece, usa el menú de Chrome y pulsa “Añadir a pantalla de inicio”.
+        </div>
+        <button class="btn btn-install" id="installBtn" hidden>Instalar app</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2 class="section-title">Fichaje de hoy</h2>
+      <div class="inline-actions" style="margin-bottom:14px;">
+        <button class="btn btn-primary" id="checkInBtn">Marcar entrada</button>
+        <button class="btn btn-secondary" id="checkOutBtn">Marcar salida</button>
+      </div>
+      <div class="row row-3">
+        <div class="stats"><div class="label">Entrada</div><div class="value" id="todayIn">—</div></div>
+        <div class="stats"><div class="label">Salida</div><div class="value" id="todayOut">—</div></div>
+        <div class="stats"><div class="label">Horas trabajadas</div><div class="value" id="todayWorked">—</div></div>
+      </div>
+      <div class="row row-3" style="margin-top:12px;">
+        <div class="stats"><div class="label">Horas objetivo de hoy</div><div class="value" id="todayTarget">—</div></div>
+        <div class="stats"><div class="label">Extra de hoy</div><div class="value" id="todayExtra">—</div></div>
+        <div class="stats"><div class="label">Registros guardados</div><div class="value" id="savedCount">0</div></div>
+      </div>
+    </div>
+
+    <div class="tabs">
+      <button class="tab active" data-tab="monthly">Resumen mensual</button>
+      <button class="tab" data-tab="history">Historial diario</button>
+    </div>
+
+    <div id="monthlyTab">
+      <div class="card">
+        <div class="row row-2" style="margin-bottom:14px;">
+          <div><div class="label">Mes</div><input id="selectedMonth" type="month"></div>
+          <div style="display:flex;align-items:end;"><button class="btn btn-secondary" id="exportBtn">Exportar CSV</button></div>
+        </div>
+        <div class="row row-4">
+          <div class="stats"><div class="label">Días registrados</div><div class="value" id="mDays">0</div></div>
+          <div class="stats"><div class="label">Horas trabajadas</div><div class="value" id="mWorked">0h 00min 00s</div></div>
+          <div class="stats"><div class="label">Horas objetivo</div><div class="value" id="mExpected">0h 00min 00s</div></div>
+          <div class="stats"><div class="label">Horas extra</div><div class="value" id="mExtra">0h 00min 00s</div></div>
+        </div>
+        <div class="row row-2" style="margin-top:12px;">
+          <div class="stats"><div class="label">Promedio por día trabajado</div><div class="value" id="mAvg">0h 00min 00s</div></div>
+          <div class="stats"><div class="label">Balance del mes</div><div class="value" id="mBalance">—</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="historyTab" class="hidden">
+      <div class="card">
+        <h2 class="section-title">Historial</h2>
+        <div id="historyList"></div>
+      </div>
+    </div>
+
+    <p class="footer-note">Versión PWA con botón interno de instalación.</p>
+  </div>
+
+  <script>
+    const REPO_BASE = '/fichajes-app2/';
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => navigator.serviceWorker.register(REPO_BASE + 'sw.js'));
+    }
+
+    const STORAGE_KEY = "fichajes_movil_v5";
+    const LEGACY_KEYS = ["fichajes_movil_v4","fichajes_movil_v3","fichajes_movil_v2","fichajes_movil_v1","fichajes_diarios_app_v1"];
+    const state = { entries: [] };
+
+    function pad(n){ return String(n).padStart(2,"0"); }
+    function todayISO(){ const d = new Date(); return d.getFullYear() + "-" + pad(d.getMonth()+1) + "-" + pad(d.getDate()); }
+    function nowTime(){ const d = new Date(); return pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds()); }
+    function prettyDate(iso){ const d = new Date(iso + "T00:00:00"); return d.toLocaleDateString("es-ES", {day:"2-digit", month:"2-digit", year:"numeric"}); }
+    function durationToText(totalSeconds){
+      const sign = totalSeconds < 0 ? "-" : "";
+      const abs = Math.abs(totalSeconds);
+      const h = Math.floor(abs / 3600);
+      const m = Math.floor((abs % 3600) / 60);
+      const s = abs % 60;
+      return sign + h + "h " + String(m).padStart(2,"0") + "min " + String(s).padStart(2,"0") + "s";
+    }
+    function monthKey(dateStr){ return dateStr.slice(0,7); }
+    function getExpectedSecondsForDate(dateStr){
+      const d = new Date(dateStr + "T00:00:00");
+      const day = d.getDay();
+      if (day >= 1 && day <= 4) return 8 * 3600 + 30 * 60;
+      if (day === 5) return 7 * 3600;
+      return 0;
+    }
+    function getScheduleTextForDate(dateStr){
+      const d = new Date(dateStr + "T00:00:00");
+      const day = d.getDay();
+      if (day >= 1 && day <= 4) return "08:30–17:00";
+      if (day === 5) return "08:00–15:00";
+      return "Sin horario objetivo";
+    }
+    function normalizeEntry(entry){
+      const normalized = {...entry};
+      if (typeof normalized.workedSeconds !== "number") {
+        if (typeof normalized.workedMinutes === "number") {
+          normalized.workedSeconds = normalized.workedMinutes * 60;
+        } else if (normalized.checkIn && normalized.checkOut && normalized.date) {
+          const start = new Date(normalized.date + "T" + normalized.checkIn);
+          const end = new Date(normalized.date + "T" + normalized.checkOut);
+          normalized.workedSeconds = Math.max(0, Math.round((end - start) / 1000));
+        } else {
+          normalized.workedSeconds = 0;
+        }
+      }
+      delete normalized.workedMinutes;
+      return normalized;
+    }
+    function save(){ localStorage.setItem(STORAGE_KEY, JSON.stringify({ entries: state.entries })); }
+    function load(){
+      try{
+        let raw = localStorage.getItem(STORAGE_KEY);
+        if(!raw){
+          for(const key of LEGACY_KEYS){
+            const legacy = localStorage.getItem(key);
+            if(legacy){ raw = legacy; break; }
+          }
+        }
+        if(!raw) return;
+        const parsed = JSON.parse(raw);
+        state.entries = Array.isArray(parsed.entries) ? parsed.entries.map(normalizeEntry) : [];
+        save();
+      }catch(e){}
+    }
+    function sortEntries(){ state.entries.sort((a,b) => b.date.localeCompare(a.date)); }
+    function getEntry(date){ return state.entries.find(e => e.date === date); }
+    function upsertEntry(entry){
+      const safeEntry = normalizeEntry(entry);
+      const idx = state.entries.findIndex(e => e.date === safeEntry.date);
+      if(idx >= 0) state.entries[idx] = safeEntry; else state.entries.push(safeEntry);
+      sortEntries(); save(); render();
+    }
+    function renderToday(){
+      const date = todayISO(), e = getEntry(date), expected = getExpectedSecondsForDate(date);
+      document.getElementById("todayDate").textContent = prettyDate(date) + " · " + getScheduleTextForDate(date);
+      document.getElementById("todayIn").textContent = e?.checkIn || "—";
+      document.getElementById("todayOut").textContent = e?.checkOut || "—";
+      document.getElementById("todayWorked").textContent = e?.workedSeconds != null && e?.checkOut ? durationToText(e.workedSeconds) : "—";
+      document.getElementById("todayTarget").textContent = durationToText(expected);
+      document.getElementById("todayExtra").textContent = e?.workedSeconds != null && e?.checkOut ? durationToText(e.workedSeconds - expected) : "—";
+      document.getElementById("savedCount").textContent = String(state.entries.length);
+      const status = document.getElementById("todayStatus");
+      status.className = "pill";
+      if(e?.checkIn && !e?.checkOut){ status.textContent = "Jornada en curso"; status.classList.add("warn"); }
+      else if(e?.checkIn && e?.checkOut){ status.textContent = "Jornada cerrada"; status.classList.add("ok"); }
+      else{ status.textContent = "Pendiente de entrada"; }
+    }
+    function renderMonthly(){
+      const selectedMonth = document.getElementById("selectedMonth").value;
+      const monthly = state.entries.filter(e => monthKey(e.date) === selectedMonth);
+      const worked = monthly.reduce((s,e) => s + (e.workedSeconds || 0), 0);
+      const expectedMonth = monthly.reduce((s,e) => s + getExpectedSecondsForDate(e.date), 0);
+      const extra = worked - expectedMonth;
+      const workedDays = monthly.filter(e => (e.workedSeconds || 0) > 0).length;
+      const avg = workedDays ? Math.round(worked / workedDays) : 0;
+      document.getElementById("mDays").textContent = String(monthly.length);
+      document.getElementById("mWorked").textContent = durationToText(worked);
+      document.getElementById("mExpected").textContent = durationToText(expectedMonth);
+      document.getElementById("mExtra").textContent = durationToText(extra);
+      document.getElementById("mAvg").textContent = durationToText(avg);
+      document.getElementById("mBalance").textContent = (extra >= 0 ? "Superávit de " : "Déficit de ") + durationToText(extra);
+    }
+    function renderHistory(){
+      const list = document.getElementById("historyList"); list.innerHTML = "";
+      if(state.entries.length === 0){ list.innerHTML = '<div class="entry"><div class="muted">Aún no hay fichajes guardados.</div></div>'; return; }
+      state.entries.forEach(entry => {
+        const expected = getExpectedSecondsForDate(entry.date);
+        const extra = (entry.workedSeconds || 0) - expected;
+        const div = document.createElement("div");
+        div.className = "entry";
+        div.innerHTML = `
+          <div class="entry-top">
+            <div>
+              <div class="entry-date">${prettyDate(entry.date)}</div>
+              <div class="small">${entry.date} · ${getScheduleTextForDate(entry.date)}</div>
+            </div>
+            <button class="btn btn-danger" style="width:auto;padding:10px 12px;border-radius:14px;" data-delete="${entry.date}">Borrar</button>
+          </div>
+          <div class="entry-grid">
+            <div><div class="label">Entrada / salida</div><div class="value" style="font-size:1rem">${entry.checkIn || "—"} / ${entry.checkOut || "—"}</div></div>
+            <div><div class="label">Trabajado / objetivo</div><div class="value" style="font-size:1rem">${entry.checkOut ? durationToText(entry.workedSeconds || 0) : "—"} / ${durationToText(expected)}</div></div>
+            <div><div class="label">Extra</div><div class="value" style="font-size:1rem">${entry.checkOut ? durationToText(extra) : "—"}</div></div>
+          </div>
+        `;
+        list.appendChild(div);
+      });
+      document.querySelectorAll("[data-delete]").forEach(btn => {
+        btn.addEventListener("click", () => {
+          const date = btn.getAttribute("data-delete");
+          state.entries = state.entries.filter(e => e.date !== date); save(); render();
+        });
+      });
+    }
+    function render(){ renderToday(); renderMonthly(); renderHistory(); }
+    function markCheckIn(){
+      const date = todayISO(), time = nowTime(), existing = getEntry(date);
+      if(existing){ if(!existing.checkIn) existing.checkIn = time; upsertEntry(existing); return; }
+      upsertEntry({date, checkIn: time, checkOut: "", workedSeconds: 0});
+    }
+    function markCheckOut(){
+      const date = todayISO(), time = nowTime(), existing = getEntry(date);
+      if(!existing || !existing.checkIn){ alert("Primero debes marcar la entrada."); return; }
+      const start = new Date(date + "T" + existing.checkIn);
+      const end = new Date(date + "T" + time);
+      existing.checkOut = time;
+      existing.workedSeconds = Math.max(0, Math.round((end - start) / 1000));
+      upsertEntry(existing);
+    }
+    function exportCSV(){
+      const selectedMonth = document.getElementById("selectedMonth").value;
+      const rows = state.entries.filter(e => monthKey(e.date) === selectedMonth);
+      const header = ["Fecha","Horario objetivo","Entrada","Salida","Segundos trabajados","Horas trabajadas","Segundos objetivo","Horas objetivo","Segundos extra","Horas extra"];
+      const body = rows.map(r => {
+        const worked = r.workedSeconds || 0, expected = getExpectedSecondsForDate(r.date), extra = worked - expected;
+        return [r.date,getScheduleTextForDate(r.date),r.checkIn || "",r.checkOut || "",worked,durationToText(worked),expected,durationToText(expected),extra,durationToText(extra)];
+      });
+      const csv = [header, ...body].map(row => row.map(cell => `"${String(cell).replaceAll('"','""')}"`).join(";")).join("\n");
+      const blob = new Blob([csv], {type:"text/csv;charset=utf-8;"}), url = URL.createObjectURL(blob), a = document.createElement("a");
+      a.href = url; a.download = "fichajes_" + selectedMonth + ".csv"; a.click(); URL.revokeObjectURL(url);
+    }
+    function initTabs(){
+      document.querySelectorAll(".tab").forEach(tab => {
+        tab.addEventListener("click", () => {
+          document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+          tab.classList.add("active");
+          const which = tab.getAttribute("data-tab");
+          document.getElementById("monthlyTab").classList.toggle("hidden", which !== "monthly");
+          document.getElementById("historyTab").classList.toggle("hidden", which !== "history");
+        });
+      });
+    }
+    function initMonth(){ document.getElementById("selectedMonth").value = todayISO().slice(0,7); }
+
+    document.getElementById("checkInBtn").addEventListener("click", markCheckIn);
+    document.getElementById("checkOutBtn").addEventListener("click", markCheckOut);
+    document.getElementById("selectedMonth").addEventListener("change", render);
+    document.getElementById("exportBtn").addEventListener("click", exportCSV);
+
+    let deferredPrompt = null;
+    const installBtn = document.getElementById('installBtn');
+    const installText = document.getElementById('installText');
+
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      deferredPrompt = e;
+      installBtn.hidden = false;
+      installText.textContent = 'La app está lista para instalarse. Pulsa el botón “Instalar app”.';
+    });
+
+    installBtn.addEventListener('click', async () => {
+      if (!deferredPrompt) {
+        installText.textContent = 'Tu navegador no ha mostrado todavía la instalación. Prueba a recargar la página y luego abre el menú de Chrome > “Añadir a pantalla de inicio”.';
+        return;
+      }
+      deferredPrompt.prompt();
+      const choiceResult = await deferredPrompt.userChoice;
+      if (choiceResult.outcome === 'accepted') {
+        installText.textContent = 'Instalación aceptada. Cuando termine, tendrás el icono en el escritorio.';
+        installBtn.hidden = true;
+      } else {
+        installText.textContent = 'Instalación cancelada. Puedes volver a intentarlo cuando quieras.';
+      }
+      deferredPrompt = null;
+    });
+
+    window.addEventListener('appinstalled', () => {
+      installText.textContent = 'La app ya está instalada en tu móvil.';
+      installBtn.hidden = true;
+    });
+
+    load(); initMonth(); initTabs(); sortEntries(); render();
+  </script>
+</body>
+</html>
