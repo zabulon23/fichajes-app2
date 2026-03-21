@@ -1,11 +1,11 @@
-const CACHE_NAME = 'fichajes-pwa-v1';
+const CACHE_NAME = 'fichajes-pwa-v2';
 const ASSETS = [
-  './',
-  './index.html',
-  './manifest.json',
-  './sw.js',
-  './icons/icon-192.png',
-  './icons/icon-512.png'
+  '/fichajes-app2/',
+  '/fichajes-app2/index.html',
+  '/fichajes-app2/manifest.json',
+  '/fichajes-app2/sw.js',
+  '/fichajes-app2/icons/icon-192.svg',
+  '/fichajes-app2/icons/icon-512.svg'
 ];
 
 self.addEventListener('install', event => {

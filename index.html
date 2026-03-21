@@ -10,7 +10,7 @@
   <meta name="mobile-web-app-capable" content="yes" />
   <title>Fichajes Diario</title>
   <link rel="manifest" href="manifest.json" />
-  <link rel="apple-touch-icon" href="icons/icon-192.png" />
+  <link rel="apple-touch-icon" href="icons/icon-192.svg" />
   <style>
     :root{
       --bg:#f8fafc; --card:#ffffff; --text:#0f172a; --muted:#64748b; --line:#e2e8f0;
@@ -32,6 +32,8 @@
     .ok{color:var(--ok)} .warn{color:var(--warn)}
     .btn{appearance:none;border:none;border-radius:18px;padding:15px 16px;font-size:1rem;font-weight:700;cursor:pointer;width:100%;transition:.15s transform ease,.15s opacity ease,.15s background ease}
     .btn:active{transform:scale(.99)} .btn-primary{background:var(--primary);color:white} .btn-secondary{background:white;color:var(--primary);border:1px solid var(--line)} .btn-danger{background:#fff1f2;color:var(--danger);border:1px solid #fecdd3}
+    .btn-install{background:#0f172a;color:#fff}
+    .btn-install[hidden]{display:none !important}
     input,select{width:100%;border:1px solid var(--line);background:white;border-radius:16px;padding:13px 14px;font-size:1rem;color:var(--text)}
     .section-title{margin:0 0 12px;font-size:1.15rem;font-weight:800}
     .stats{background:var(--soft);border-radius:18px;padding:14px;border:1px solid var(--line)}
@@ -47,7 +49,8 @@
     .muted{color:var(--muted)}
     .footer-note{text-align:center;color:var(--muted);font-size:.83rem;margin-top:8px}
     .inline-actions{display:flex;gap:10px;flex-wrap:wrap}.inline-actions>*{flex:1}
-    .install-tip{margin-top:10px;padding:12px 14px;border-radius:16px;background:#ecfeff;border:1px solid #bae6fd;color:#0c4a6e;font-size:.92rem}
+    .install-box{margin-top:10px;padding:14px;border-radius:16px;background:#ecfeff;border:1px solid #bae6fd;color:#0c4a6e}
+    .install-title{font-weight:800;margin-bottom:6px}
   </style>
 </head>
 <body>
@@ -68,7 +71,14 @@
           <div class="small" style="margin-top:8px;" id="todayDate"></div>
         </div>
       </div>
-      <div class="install-tip" id="installTip">Para instalarla, abre esta web en tu móvil y usa “Añadir a pantalla de inicio” o “Instalar aplicación”.</div>
+
+      <div class="install-box" id="installBox">
+        <div class="install-title">Instalar la app</div>
+        <div class="small" id="installText" style="font-size:.92rem;color:#0c4a6e;margin-bottom:10px;">
+          Si tu navegador lo permite, puedes instalarla con el botón de abajo. Si no aparece, usa el menú de Chrome y pulsa “Añadir a pantalla de inicio”.
+        </div>
+        <button class="btn btn-install" id="installBtn" hidden>Instalar app</button>
+      </div>
     </div>
 
     <div class="card">
@@ -120,16 +130,17 @@
       </div>
     </div>
 
-    <p class="footer-note">Versión instalable tipo app. Tus datos se guardan en el navegador del móvil.</p>
+    <p class="footer-note">Versión PWA con botón interno de instalación.</p>
   </div>
 
   <script>
+    const REPO_BASE = '/fichajes-app2/';
     if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => navigator.serviceWorker.register('/fichajes-app2/sw.js'));
+      window.addEventListener('load', () => navigator.serviceWorker.register(REPO_BASE + 'sw.js'));
     }
 
-    const STORAGE_KEY = "fichajes_movil_v4";
-    const LEGACY_KEYS = ["fichajes_movil_v3","fichajes_movil_v2","fichajes_movil_v1","fichajes_diarios_app_v1"];
+    const STORAGE_KEY = "fichajes_movil_v5";
+    const LEGACY_KEYS = ["fichajes_movil_v4","fichajes_movil_v3","fichajes_movil_v2","fichajes_movil_v1","fichajes_diarios_app_v1"];
     const state = { entries: [] };
 
     function pad(n){ return String(n).padStart(2,"0"); }
@@ -306,11 +317,35 @@
     document.getElementById("exportBtn").addEventListener("click", exportCSV);
 
     let deferredPrompt = null;
-    window.addEventListener("beforeinstallprompt", (e) => {
+    const installBtn = document.getElementById('installBtn');
+    const installText = document.getElementById('installText');
+
+    window.addEventListener('beforeinstallprompt', (e) => {
       e.preventDefault();
       deferredPrompt = e;
-      const tip = document.getElementById("installTip");
-      tip.innerHTML = 'La app está lista para instalarse. Usa el menú del navegador y pulsa <b>Instalar aplicación</b> o <b>Añadir a pantalla de inicio</b>.';
+      installBtn.hidden = false;
+      installText.textContent = 'La app está lista para instalarse. Pulsa el botón “Instalar app”.';
+    });
+
+    installBtn.addEventListener('click', async () => {
+      if (!deferredPrompt) {
+        installText.textContent = 'Tu navegador no ha mostrado todavía la instalación. Prueba a recargar la página y luego abre el menú de Chrome > “Añadir a pantalla de inicio”.';
+        return;
+      }
+      deferredPrompt.prompt();
+      const choiceResult = await deferredPrompt.userChoice;
+      if (choiceResult.outcome === 'accepted') {
+        installText.textContent = 'Instalación aceptada. Cuando termine, tendrás el icono en el escritorio.';
+        installBtn.hidden = true;
+      } else {
+        installText.textContent = 'Instalación cancelada. Puedes volver a intentarlo cuando quieras.';
+      }
+      deferredPrompt = null;
+    });
+
+    window.addEventListener('appinstalled', () => {
+      installText.textContent = 'La app ya está instalada en tu móvil.';
+      installBtn.hidden = true;
     });
 
     load(); initMonth(); initTabs(); sortEntries(); render();
