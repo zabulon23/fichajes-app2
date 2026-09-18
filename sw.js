@@ -1,4 +1,4 @@
-const CACHE_NAME = 'fichajes-pwa-v5';
+const CACHE_NAME = 'fichajes-pwa-v6';
 const ASSETS = [
   '/fichajes-app2/',
   '/fichajes-app2/index.html',

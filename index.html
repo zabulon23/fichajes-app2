@@ -48,11 +48,26 @@
     @media(max-width:640px){.segment{grid-template-columns:1fr}.segment .btn{width:100%}}
     .notice{margin-top:10px;padding:12px 14px;border-radius:16px;background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;font-size:.92rem}
   
-    .schedule-edit{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}
-    .time-pair{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-    .edit-row{border-top:1px solid var(--line);padding-top:10px;margin-top:10px}
-    .mini-btn{width:auto;padding:9px 12px;border-radius:12px;font-size:.88rem}
-    @media(max-width:640px){.schedule-edit,.time-pair{grid-template-columns:1fr}}
+    .mini-btn{width:auto;padding:8px 11px;border-radius:12px;font-size:.84rem}
+    .click-time{display:inline-block;font-weight:800;font-size:1.08rem;cursor:pointer;padding:3px 5px;margin:-3px -5px;border-radius:8px}
+    .click-time:hover,.click-time:active{background:#e2e8f0}
+    .compact-schedule{cursor:pointer}
+    .compact-schedule .value{display:inline-block}
+    .history-summary{display:flex;gap:8px 14px;flex-wrap:wrap;margin-top:8px}
+    .history-summary span{font-size:.88rem;color:var(--muted)}
+    .history-summary strong{color:var(--text)}
+    .history-segment{display:flex;align-items:center;gap:6px 10px;flex-wrap:wrap;padding:9px 0;border-top:1px solid var(--line)}
+    .history-segment:first-child{border-top:none}
+    .history-segment .duration{margin-left:auto;color:var(--muted);font-size:.84rem}
+    .history-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:9px}
+    .history-actions .btn{width:auto}
+    .modal-backdrop{position:fixed;inset:0;background:rgba(15,23,42,.45);display:flex;align-items:center;justify-content:center;padding:18px;z-index:9999}
+    .modal-backdrop.hidden{display:none}
+    .modal{width:min(420px,100%);background:white;border-radius:22px;padding:18px;box-shadow:0 20px 60px rgba(15,23,42,.25)}
+    .modal h3{margin:0 0 5px;font-size:1.15rem}
+    .modal-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:15px 0}
+    .modal-actions{display:flex;gap:10px}
+    @media(max-width:480px){.modal-grid{grid-template-columns:1fr}.history-segment .duration{width:100%;margin-left:0}}
   </style>
 </head>
 <body>
@@ -73,8 +88,8 @@
         </label>
       </div>
       <div class="schedule-detail">
-        <div class="stats"><div class="label">Lunes a jueves · pulsa para modificar</div><div class="time-pair"><input type="time" step="60" id="monThuStart"><input type="time" step="60" id="monThuEnd"></div></div>
-        <div class="stats"><div class="label">Viernes · pulsa para modificar</div><div class="time-pair"><input type="time" step="60" id="friStart"><input type="time" step="60" id="friEnd"></div></div>
+        <div class="stats compact-schedule" id="editMonThu"><div class="label">Lunes a jueves · pulsa para modificar</div><div class="value" id="monThuDisplay">08:30–17:00</div></div>
+        <div class="stats compact-schedule" id="editFri"><div class="label">Viernes · pulsa para modificar</div><div class="value" id="friDisplay">08:00–15:00</div></div>
       </div>
       <div class="small" style="margin-top:10px">Estos cambios se aplican a días nuevos. Los días ya archivados conservan su horario objetivo.</div>
     </div>
@@ -153,13 +168,28 @@
       </div>
     </div>
 
-    <p class="footer-note">Versión con varios tramos diarios: una salida solo puede cerrar una entrada abierta.</p>
+    <p class="footer-note">Pulsa sobre cualquier hora para modificarla.</p>
+    <div class="modal-backdrop hidden" id="editModal">
+      <div class="modal" role="dialog" aria-modal="true">
+        <h3 id="modalTitle">Modificar horas</h3>
+        <div class="small" id="modalSubtitle">Introduce las horas y pulsa Guardar.</div>
+        <div class="modal-grid">
+          <div><div class="label" id="modalStartLabel">Entrada</div><input type="time" step="1" id="modalStart"></div>
+          <div><div class="label" id="modalEndLabel">Salida</div><input type="time" step="1" id="modalEnd"></div>
+        </div>
+        <div class="modal-actions">
+          <button class="btn btn-secondary" id="modalCancel">Cancelar</button>
+          <button class="btn btn-primary" id="modalSave">Guardar</button>
+        </div>
+      </div>
+    </div>
+
   </div>
 
   <script>
     const REPO_BASE='/fichajes-app2/';
     if('serviceWorker' in navigator) window.addEventListener('load',()=>navigator.serviceWorker.register(REPO_BASE+'sw.js'));
-    const STORAGE_KEY='fichajes_movil_v8', LEGACY_KEYS=['fichajes_movil_v7','fichajes_movil_v6','fichajes_movil_v5','fichajes_movil_v4','fichajes_movil_v3','fichajes_movil_v2','fichajes_movil_v1','fichajes_diarios_app_v1'];
+    const STORAGE_KEY='fichajes_movil_v9', LEGACY_KEYS=['fichajes_movil_v8','fichajes_movil_v7','fichajes_movil_v6','fichajes_movil_v5','fichajes_movil_v4','fichajes_movil_v3','fichajes_movil_v2','fichajes_movil_v1','fichajes_diarios_app_v1'];
     const SEASON_KEY='fichajes_tipo_horario_v1', SCHEDULE_KEY='fichajes_horarios_v2';
     const defaults={winter:{monThu:{start:'08:30',end:'17:00'},fri:{start:'08:00',end:'15:00'}},summer:{monThu:{start:'08:00',end:'15:15'},fri:{start:'08:00',end:'15:00'}}};
     const state={days:[],season:'winter',schedules:JSON.parse(JSON.stringify(defaults))};
@@ -183,17 +213,23 @@
     const workedSeconds=d=>(d?.segments||[]).reduce((s,x)=>s+secondsBetween(d.date,x.in,x.out),0);
     const expectedSeconds=d=>timeDiff(d.target?.start,d.target?.end);
     const targetText=d=>d.target?.start&&d.target?.end?d.target.start+'–'+d.target.end:'Sin horario objetivo';
-    function updateSeasonUI(){const summer=state.season==='summer',cfg=state.schedules[state.season];seasonToggle.checked=summer;seasonLabel.textContent=summer?'Horario de verano':'Horario de invierno';seasonLabel.className='season-badge '+(summer?'summer':'winter');monThuStart.value=cfg.monThu.start;monThuEnd.value=cfg.monThu.end;friStart.value=cfg.fri.start;friEnd.value=cfg.fri.end;activeScheduleText.textContent='L-J '+cfg.monThu.start+'–'+cfg.monThu.end+' · V '+cfg.fri.start+'–'+cfg.fri.end}
+    function updateSeasonUI(){const summer=state.season==='summer',cfg=state.schedules[state.season];seasonToggle.checked=summer;seasonLabel.textContent=summer?'Horario de verano':'Horario de invierno';seasonLabel.className='season-badge '+(summer?'summer':'winter');monThuDisplay.textContent=cfg.monThu.start+'–'+cfg.monThu.end;friDisplay.textContent=cfg.fri.start+'–'+cfg.fri.end;activeScheduleText.textContent='L-J '+cfg.monThu.start+'–'+cfg.monThu.end+' · V '+cfg.fri.start+'–'+cfg.fri.end}
     function renderToday(){const date=todayISO(),d=getDay(date),open=openSegment(d),worked=workedSeconds(d),expected=d?expectedSeconds(d):timeDiff(scheduleSnapshot(date,state.season).start,scheduleSnapshot(date,state.season).end);todayDate.textContent=prettyDate(date)+' · '+(d?targetText(d):(scheduleSnapshot(date,state.season).start?targetText({target:scheduleSnapshot(date,state.season)}):'Sin horario objetivo'));todayOpenIn.textContent=open?open.in:'—';todayClosedCount.textContent=String((d?.segments||[]).filter(x=>x.in&&x.out).length);todayWorked.textContent=worked?durationToText(worked):'—';todayTarget.textContent=durationToText(expected);todayExtra.textContent=worked?durationToText(worked-expected):'—';savedCount.textContent=String(state.days.length);todayStatus.className='pill';if(open){todayStatus.textContent='Entrada abierta';todayStatus.classList.add('warn')}else if(d?.segments?.length){todayStatus.textContent='Sin entrada abierta';todayStatus.classList.add('ok')}else todayStatus.textContent='Pendiente de entrada';todayNotice.classList.toggle('hidden',!open);todayNotice.textContent=open?'Tienes una entrada abierta desde las '+open.in+'. La siguiente salida cerrará ese tramo.':'';todaySegments.innerHTML=d?.segments?.length?d.segments.map((x,i)=>`<div class="segment"><div><div class="label">Entrada ${i+1}</div><div class="value">${x.in||'—'}</div></div><div><div class="label">Salida ${i+1}</div><div class="value">${x.out||'Abierta'}</div></div><div><div class="label">Duración</div><div class="value">${x.out?durationToText(secondsBetween(d.date,x.in,x.out)):'En curso'}</div></div><button class="btn btn-danger" style="padding:10px" data-del-today="${i}">Borrar</button></div>`).join(''):'<div class="entry"><div class="muted">Aún no hay tramos registrados hoy.</div></div>';document.querySelectorAll('[data-del-today]').forEach(b=>b.onclick=()=>{d.segments.splice(+b.dataset.delToday,1);if(!d.segments.length)state.days=state.days.filter(q=>q.date!==d.date);save();render()})}
     function renderMonthly(){const m=selectedMonth.value,days=state.days.filter(d=>monthKey(d.date)===m),worked=days.reduce((s,d)=>s+workedSeconds(d),0),expected=days.reduce((s,d)=>s+expectedSeconds(d),0),extra=worked-expected,n=days.filter(d=>workedSeconds(d)>0).length;mDays.textContent=days.length;mWorked.textContent=durationToText(worked);mExpected.textContent=durationToText(expected);mExtra.textContent=durationToText(extra);mAvg.textContent=durationToText(n?Math.round(worked/n):0);mBalance.textContent=(extra>=0?'Superávit de ':'Déficit de ')+durationToText(extra)}
-    function renderHistory(){historyList.innerHTML='';if(!state.days.length){historyList.innerHTML='<div class="entry muted">Aún no hay fichajes guardados.</div>';return}state.days.forEach(d=>{const w=workedSeconds(d),e=expectedSeconds(d),box=document.createElement('div');box.className='entry';box.innerHTML=`<div class="entry-top"><div><div class="entry-date">${prettyDate(d.date)}</div><div class="small">${d.season==='summer'?'Verano':'Invierno'} · objetivo ${targetText(d)}</div></div><button class="btn btn-danger mini-btn" data-delete-day="${d.date}">Borrar día</button></div><div class="entry-grid"><div><div class="label">Trabajado</div><div class="value">${durationToText(w)}</div></div><div><div class="label">Objetivo</div><div class="value">${durationToText(e)}</div></div><div><div class="label">Extra</div><div class="value">${durationToText(w-e)}</div></div></div><div class="edit-row"><div class="label">Corregir horario objetivo de este día</div><div class="time-pair"><input type="time" value="${d.target.start}" data-target-start="${d.date}"><input type="time" value="${d.target.end}" data-target-end="${d.date}"></div></div><div class="edit-row"><div class="label">Entradas y salidas — puedes completar o corregir horas</div>${d.segments.map((x,i)=>`<div class="segment"><input type="time" step="1" value="${x.in}" data-in="${d.date}|${i}"><input type="time" step="1" value="${x.out}" data-out="${d.date}|${i}"><div class="small">${x.in&&x.out?durationToText(secondsBetween(d.date,x.in,x.out)):'Incompleto'}</div><button class="btn btn-danger mini-btn" data-del-seg="${d.date}|${i}">Borrar</button></div>`).join('')}<button class="btn btn-secondary" style="margin-top:10px" data-add-seg="${d.date}">+ Añadir entrada/salida olvidada</button></div>`;historyList.appendChild(box)});bindHistory()}
-    function bindHistory(){document.querySelectorAll('[data-delete-day]').forEach(b=>b.onclick=()=>{state.days=state.days.filter(d=>d.date!==b.dataset.deleteDay);save();render()});document.querySelectorAll('[data-add-seg]').forEach(b=>b.onclick=()=>{getDay(b.dataset.addSeg).segments.push({in:'',out:''});save();render()});document.querySelectorAll('[data-del-seg]').forEach(b=>b.onclick=()=>{const [date,i]=b.dataset.delSeg.split('|');getDay(date).segments.splice(+i,1);save();render()});document.querySelectorAll('[data-in],[data-out]').forEach(el=>el.onchange=()=>{const key=el.dataset.in||el.dataset.out,[date,i]=key.split('|'),seg=getDay(date).segments[+i];if(el.dataset.in!==undefined)seg.in=el.value;else seg.out=el.value;save();render()});document.querySelectorAll('[data-target-start],[data-target-end]').forEach(el=>el.onchange=()=>{const date=el.dataset.targetStart||el.dataset.targetEnd,d=getDay(date);if(el.dataset.targetStart!==undefined)d.target.start=el.value;else d.target.end=el.value;save();render()})}
+    function renderHistory(){historyList.innerHTML='';if(!state.days.length){historyList.innerHTML='<div class="entry muted">Aún no hay fichajes guardados.</div>';return}state.days.forEach(d=>{const w=workedSeconds(d),e=expectedSeconds(d),box=document.createElement('div');box.className='entry';const segs=d.segments.length?d.segments.map((x,i)=>`<div class="history-segment"><span class="small">Tramo ${i+1}</span><span>Entrada <span class="click-time" data-edit-in="${d.date}|${i}">${x.in||'—'}</span></span><span>→</span><span>Salida <span class="click-time" data-edit-out="${d.date}|${i}">${x.out||'—'}</span></span><span class="duration">${x.in&&x.out?durationToText(secondsBetween(d.date,x.in,x.out)):'Incompleto'}</span><button class="btn btn-danger mini-btn" data-del-seg="${d.date}|${i}">Borrar</button></div>`).join(''):'<div class="small muted">Sin tramos registrados.</div>';box.innerHTML=`<div class="entry-top"><div><div class="entry-date">${prettyDate(d.date)}</div><div class="small">${d.season==='summer'?'Verano':'Invierno'} · objetivo <span class="click-time" data-edit-target="${d.date}">${targetText(d)}</span></div></div><button class="btn btn-danger mini-btn" data-delete-day="${d.date}">Borrar día</button></div><div class="history-summary"><span>Trabajado <strong>${durationToText(w)}</strong></span><span>Objetivo <strong>${durationToText(e)}</strong></span><span>Extra <strong>${durationToText(w-e)}</strong></span></div><div style="margin-top:10px">${segs}</div><div class="history-actions"><button class="btn btn-secondary mini-btn" data-add-seg="${d.date}">+ Añadir tramo</button></div>`;historyList.appendChild(box)});bindHistory()}
+    function bindHistory(){document.querySelectorAll('[data-delete-day]').forEach(b=>b.onclick=()=>{state.days=state.days.filter(d=>d.date!==b.dataset.deleteDay);save();render()});document.querySelectorAll('[data-add-seg]').forEach(b=>b.onclick=()=>openSegmentEditor(b.dataset.addSeg,-1));document.querySelectorAll('[data-del-seg]').forEach(b=>b.onclick=()=>{const [date,i]=b.dataset.delSeg.split('|');getDay(date).segments.splice(+i,1);save();render()});document.querySelectorAll('[data-edit-in]').forEach(el=>el.onclick=()=>{const [date,i]=el.dataset.editIn.split('|');openSegmentEditor(date,+i,'in')});document.querySelectorAll('[data-edit-out]').forEach(el=>el.onclick=()=>{const [date,i]=el.dataset.editOut.split('|');openSegmentEditor(date,+i,'out')});document.querySelectorAll('[data-edit-target]').forEach(el=>el.onclick=()=>openTargetEditor(el.dataset.editTarget))}
     function render(){updateSeasonUI();renderToday();renderMonthly();renderHistory()}
     function markCheckIn(){const d=ensureDay(todayISO());if(openSegment(d)){alert('Ya tienes una entrada abierta. Primero marca la salida.');return}d.segments.push({in:nowTime(),out:''});save();render()}
     function markCheckOut(){const d=getDay(todayISO()),o=openSegment(d);if(!o){alert('No puedes marcar salida porque no hay ninguna entrada abierta.');return}o.out=nowTime();save();render()}
-    function updateSchedule(){const cfg=state.schedules[state.season];cfg.monThu={start:monThuStart.value,end:monThuEnd.value};cfg.fri={start:friStart.value,end:friEnd.value};save();render()}
+    let modalAction=null;
+    function showModal(title,subtitle,start,end,onSave,startLabel='Entrada',endLabel='Salida'){modalTitle.textContent=title;modalSubtitle.textContent=subtitle;modalStartLabel.textContent=startLabel;modalEndLabel.textContent=endLabel;modalStart.value=start||'';modalEnd.value=end||'';modalAction=onSave;editModal.classList.remove('hidden');setTimeout(()=>modalStart.focus(),50)}
+    function closeModal(){editModal.classList.add('hidden');modalAction=null}
+    modalCancel.onclick=closeModal;editModal.onclick=e=>{if(e.target===editModal)closeModal()};modalSave.onclick=()=>{if(modalAction)modalAction(modalStart.value,modalEnd.value);closeModal()}
+    function openScheduleEditor(kind){const cfg=state.schedules[state.season],slot=cfg[kind],label=kind==='monThu'?'Lunes a jueves':'Viernes';showModal('Modificar horario · '+label,'Se aplicará únicamente a días nuevos. Los días archivados no cambiarán.',slot.start,slot.end,(a,b)=>{if(!a||!b){alert('Introduce una hora de entrada y una hora de salida.');return}cfg[kind]={start:a,end:b};save();render()},'Entrada','Salida')}
+    function openTargetEditor(date){const d=getDay(date);showModal('Horario objetivo · '+prettyDate(date),'Este cambio afecta únicamente a este día archivado.',d.target.start,d.target.end,(a,b)=>{d.target={start:a,end:b};save();render()},'Inicio objetivo','Fin objetivo')}
+    function openSegmentEditor(date,index,focusField){const d=getDay(date);if(index<0){showModal('Añadir tramo · '+prettyDate(date),'Añade una entrada y salida olvidadas. Puedes dejar la salida vacía si aún no la conoces.','','',(a,b)=>{if(!a&&!b)return;d.segments.push({in:a,out:b});save();render()});return}const seg=d.segments[index];showModal('Modificar tramo '+(index+1)+' · '+prettyDate(date),'Corrige la entrada o la salida. El total se recalculará automáticamente.',seg.in,seg.out,(a,b)=>{seg.in=a;seg.out=b;save();render()});setTimeout(()=>{if(focusField==='out')modalEnd.focus();else modalStart.focus()},80)}
     function exportCSV(){const m=selectedMonth.value,rows=[];state.days.filter(d=>monthKey(d.date)===m).forEach(d=>d.segments.forEach((x,i)=>rows.push([d.date,i+1,d.season==='summer'?'Verano':'Invierno',targetText(d),x.in,x.out,x.in&&x.out?durationToText(secondsBetween(d.date,x.in,x.out)):'',durationToText(workedSeconds(d)),durationToText(expectedSeconds(d)),durationToText(workedSeconds(d)-expectedSeconds(d))])));const header=['Fecha','Tramo','Horario archivado','Horario objetivo','Entrada','Salida','Duración tramo','Total día','Objetivo día','Extra día'];const csv=[header,...rows].map(r=>r.map(c=>'"'+String(c??'').replaceAll('"','""')+'"').join(';')).join('\n'),blob=new Blob([csv],{type:'text/csv;charset=utf-8;'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='fichajes_'+m+'.csv';a.click();URL.revokeObjectURL(url)}
-    checkInBtn.onclick=markCheckIn;checkOutBtn.onclick=markCheckOut;exportBtn.onclick=exportCSV;selectedMonth.onchange=render;seasonToggle.onchange=e=>{state.season=e.target.checked?'summer':'winter';save();render()};[monThuStart,monThuEnd,friStart,friEnd].forEach(x=>x.onchange=updateSchedule);document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{document.querySelectorAll('.tab').forEach(q=>q.classList.remove('active'));t.classList.add('active');monthlyTab.classList.toggle('hidden',t.dataset.tab!=='monthly');historyTab.classList.toggle('hidden',t.dataset.tab!=='history')});
+    checkInBtn.onclick=markCheckIn;checkOutBtn.onclick=markCheckOut;exportBtn.onclick=exportCSV;selectedMonth.onchange=render;seasonToggle.onchange=e=>{state.season=e.target.checked?'summer':'winter';save();render()};editMonThu.onclick=()=>openScheduleEditor('monThu');editFri.onclick=()=>openScheduleEditor('fri');document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{document.querySelectorAll('.tab').forEach(q=>q.classList.remove('active'));t.classList.add('active');monthlyTab.classList.toggle('hidden',t.dataset.tab!=='monthly');historyTab.classList.toggle('hidden',t.dataset.tab!=='history')});
     let deferredPrompt=null;window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredPrompt=e;installBtn.hidden=false;installText.textContent='La app está lista para instalarse. Pulsa “Instalar app”.'});installBtn.onclick=async()=>{if(!deferredPrompt)return;deferredPrompt.prompt();await deferredPrompt.userChoice;deferredPrompt=null;installBtn.hidden=true};
     load();selectedMonth.value=todayISO().slice(0,7);render();
   </script>
