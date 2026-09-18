@@ -47,6 +47,12 @@
     .segment{display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:10px;align-items:center;border:1px solid var(--line);border-radius:16px;padding:12px;margin-top:10px;background:#fff}
     @media(max-width:640px){.segment{grid-template-columns:1fr}.segment .btn{width:100%}}
     .notice{margin-top:10px;padding:12px 14px;border-radius:16px;background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;font-size:.92rem}
+  
+    .schedule-edit{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}
+    .time-pair{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+    .edit-row{border-top:1px solid var(--line);padding-top:10px;margin-top:10px}
+    .mini-btn{width:auto;padding:9px 12px;border-radius:12px;font-size:.88rem}
+    @media(max-width:640px){.schedule-edit,.time-pair{grid-template-columns:1fr}}
   </style>
 </head>
 <body>
@@ -67,9 +73,10 @@
         </label>
       </div>
       <div class="schedule-detail">
-        <div class="stats"><div class="label">Lunes a jueves</div><div class="value" id="scheduleMonThu">08:30–17:00</div></div>
-        <div class="stats"><div class="label">Viernes</div><div class="value" id="scheduleFri">08:00–15:00</div></div>
+        <div class="stats"><div class="label">Lunes a jueves · pulsa para modificar</div><div class="time-pair"><input type="time" step="60" id="monThuStart"><input type="time" step="60" id="monThuEnd"></div></div>
+        <div class="stats"><div class="label">Viernes · pulsa para modificar</div><div class="time-pair"><input type="time" step="60" id="friStart"><input type="time" step="60" id="friEnd"></div></div>
       </div>
+      <div class="small" style="margin-top:10px">Estos cambios se aplican a días nuevos. Los días ya archivados conservan su horario objetivo.</div>
     </div>
 
     <div class="card">
@@ -150,282 +157,45 @@
   </div>
 
   <script>
-    const REPO_BASE = '/fichajes-app2/';
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => navigator.serviceWorker.register(REPO_BASE + 'sw.js'));
-    }
-
-    const STORAGE_KEY = "fichajes_movil_v7";
-    const LEGACY_KEYS = ["fichajes_movil_v6","fichajes_movil_v5","fichajes_movil_v4","fichajes_movil_v3","fichajes_movil_v2","fichajes_movil_v1","fichajes_diarios_app_v1"];
-    const SEASON_KEY = "fichajes_tipo_horario_v1";
-    const state = { days: [], season: "winter" };
-
-    function pad(n){ return String(n).padStart(2,"0"); }
-    function todayISO(){ const d = new Date(); return d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate()); }
-    function nowTime(){ const d = new Date(); return pad(d.getHours())+":"+pad(d.getMinutes())+":"+pad(d.getSeconds()); }
-    function prettyDate(iso){ const d = new Date(iso+"T00:00:00"); return d.toLocaleDateString("es-ES",{day:"2-digit",month:"2-digit",year:"numeric"}); }
-    function monthKey(dateStr){ return dateStr.slice(0,7); }
-    function durationToText(totalSeconds){
-      const sign = totalSeconds < 0 ? "-" : "";
-      const abs = Math.abs(Math.round(totalSeconds || 0));
-      const h = Math.floor(abs/3600), m = Math.floor((abs%3600)/60), s = abs%60;
-      return sign+h+"h "+String(m).padStart(2,"0")+"min "+String(s).padStart(2,"0")+"s";
-    }
-    function secondsBetween(date, start, end){
-      if(!start || !end) return 0;
-      const s = new Date(date+"T"+start), e = new Date(date+"T"+end);
-      return Math.max(0, Math.round((e-s)/1000));
-    }
-    function getExpectedSecondsForDate(dateStr, season = state.season){
-      const day = new Date(dateStr+"T00:00:00").getDay();
-      if(day >= 1 && day <= 4) return season === "summer" ? 7*3600+15*60 : 8*3600+30*60;
-      if(day === 5) return 7*3600;
-      return 0;
-    }
-    function getScheduleTextForDate(dateStr, season = state.season){
-      const day = new Date(dateStr+"T00:00:00").getDay();
-      if(day >= 1 && day <= 4) return season === "summer" ? "08:00–15:15" : "08:30–17:00";
-      if(day === 5) return "08:00–15:00";
-      return "Sin horario objetivo";
-    }
-    function updateSeasonUI(){
-      const isSummer = state.season === "summer";
-      document.getElementById("seasonToggle").checked = isSummer;
-      const label = document.getElementById("seasonLabel");
-      label.textContent = isSummer ? "Horario de verano" : "Horario de invierno";
-      label.className = "season-badge " + (isSummer ? "summer" : "winter");
-      document.getElementById("scheduleMonThu").textContent = isSummer ? "08:00–15:15" : "08:30–17:00";
-      document.getElementById("scheduleFri").textContent = "08:00–15:00";
-      document.getElementById("activeScheduleText").textContent = isSummer ? "L-J 08:00–15:15 · V 08:00–15:00" : "L-J 08:30–17:00 · V 08:00–15:00";
-    }
-    function normalizeLegacyEntry(entry){
-      const date = entry.date || todayISO();
-      if(Array.isArray(entry.segments)){
-        return {date, segments: entry.segments.map(seg => ({in: seg.in || seg.checkIn || "", out: seg.out || seg.checkOut || ""}))};
-      }
-      if(entry.checkIn || entry.checkOut){
-        return {date, segments: [{in: entry.checkIn || "", out: entry.checkOut || ""}]};
-      }
-      return {date, segments: []};
-    }
-    function save(){ localStorage.setItem(STORAGE_KEY, JSON.stringify({days: state.days})); localStorage.setItem(SEASON_KEY, state.season); }
-    function load(){
-      let raw = localStorage.getItem(STORAGE_KEY);
-      if(raw){
-        try{ const parsed = JSON.parse(raw); state.days = Array.isArray(parsed.days) ? parsed.days.map(normalizeLegacyEntry) : []; }catch(e){}
-      }else{
-        for(const key of LEGACY_KEYS){
-          const legacy = localStorage.getItem(key);
-          if(legacy){
-            try{
-              const parsed = JSON.parse(legacy);
-              const entries = parsed.entries || parsed.days || [];
-              state.days = Array.isArray(entries) ? entries.map(normalizeLegacyEntry) : [];
-            }catch(e){}
-            break;
-          }
-        }
-      }
-      const savedSeason = localStorage.getItem(SEASON_KEY);
-      if(savedSeason === "summer" || savedSeason === "winter") state.season = savedSeason;
-      sortDays(); save();
-    }
-    function sortDays(){ state.days.sort((a,b)=>b.date.localeCompare(a.date)); }
-    function getDay(date){ return state.days.find(d => d.date === date); }
-    function ensureDay(date){
-      let d = getDay(date);
-      if(!d){ d = {date, segments: []}; state.days.push(d); sortDays(); }
-      return d;
-    }
-    function closedSegments(day){ return (day?.segments || []).filter(s => s.in && s.out); }
-    function openSegment(day){ return (day?.segments || []).find(s => s.in && !s.out); }
-    function workedSeconds(day){ return (day?.segments || []).reduce((sum, s) => sum + secondsBetween(day.date, s.in, s.out), 0); }
-
-    function renderToday(){
-      const date = todayISO(), day = getDay(date), expected = getExpectedSecondsForDate(date);
-      const open = openSegment(day), closed = closedSegments(day), worked = workedSeconds(day);
-      document.getElementById("todayDate").textContent = prettyDate(date)+" · "+getScheduleTextForDate(date);
-      document.getElementById("todayOpenIn").textContent = open ? open.in : "—";
-      document.getElementById("todayClosedCount").textContent = String(closed.length);
-      document.getElementById("todayWorked").textContent = worked ? durationToText(worked) : "—";
-      document.getElementById("todayTarget").textContent = durationToText(expected);
-      document.getElementById("todayExtra").textContent = worked ? durationToText(worked - expected) : "—";
-      document.getElementById("savedCount").textContent = String(state.days.length);
-      const status = document.getElementById("todayStatus");
-      status.className = "pill";
-      if(open){ status.textContent = "Entrada abierta"; status.classList.add("warn"); }
-      else if(closed.length){ status.textContent = "Sin entrada abierta"; status.classList.add("ok"); }
-      else { status.textContent = "Pendiente de entrada"; }
-      const notice = document.getElementById("todayNotice");
-      notice.classList.toggle("hidden", !open);
-      notice.textContent = open ? "Tienes una entrada abierta desde las " + open.in + ". La siguiente salida cerrará ese tramo." : "";
-
-      const container = document.getElementById("todaySegments");
-      container.innerHTML = "";
-      if(!day || !day.segments.length){
-        container.innerHTML = '<div class="entry"><div class="muted">Aún no hay tramos registrados hoy.</div></div>';
-        return;
-      }
-      day.segments.forEach((seg, idx) => {
-        const div = document.createElement("div");
-        div.className = "segment";
-        div.innerHTML = `
-          <div><div class="label">Entrada ${idx+1}</div><div class="value">${seg.in || "—"}</div></div>
-          <div><div class="label">Salida ${idx+1}</div><div class="value">${seg.out || "Abierta"}</div></div>
-          <div><div class="label">Duración</div><div class="value">${seg.out ? durationToText(secondsBetween(day.date, seg.in, seg.out)) : "En curso"}</div></div>
-          <button class="btn btn-danger" style="padding:10px 12px;border-radius:14px" data-del-today="${idx}">Borrar</button>
-        `;
-        container.appendChild(div);
-      });
-      document.querySelectorAll("[data-del-today]").forEach(btn => {
-        btn.addEventListener("click", () => {
-          const idx = Number(btn.getAttribute("data-del-today"));
-          day.segments.splice(idx,1);
-          if(!day.segments.length) state.days = state.days.filter(d => d.date !== day.date);
-          save(); render();
-        });
-      });
-    }
-
-    function renderMonthly(){
-      const selectedMonth = document.getElementById("selectedMonth").value;
-      const monthly = state.days.filter(d => monthKey(d.date) === selectedMonth);
-      const worked = monthly.reduce((s,d) => s + workedSeconds(d), 0);
-      const expected = monthly.reduce((s,d) => s + getExpectedSecondsForDate(d.date), 0);
-      const extra = worked - expected;
-      const workedDays = monthly.filter(d => workedSeconds(d) > 0).length;
-      document.getElementById("mDays").textContent = String(monthly.length);
-      document.getElementById("mWorked").textContent = durationToText(worked);
-      document.getElementById("mExpected").textContent = durationToText(expected);
-      document.getElementById("mExtra").textContent = durationToText(extra);
-      document.getElementById("mAvg").textContent = durationToText(workedDays ? Math.round(worked/workedDays) : 0);
-      document.getElementById("mBalance").textContent = (extra >= 0 ? "Superávit de " : "Déficit de ") + durationToText(extra);
-    }
-
-    function renderHistory(){
-      const list = document.getElementById("historyList"); list.innerHTML = "";
-      if(!state.days.length){ list.innerHTML = '<div class="entry"><div class="muted">Aún no hay fichajes guardados.</div></div>'; return; }
-      state.days.forEach(day => {
-        const worked = workedSeconds(day), expected = getExpectedSecondsForDate(day.date), extra = worked - expected;
-        const open = openSegment(day);
-        const div = document.createElement("div");
-        div.className = "entry";
-        const segs = day.segments.map((s,i) => `${i+1}. ${s.in || "—"} → ${s.out || "abierta"} (${s.out ? durationToText(secondsBetween(day.date,s.in,s.out)) : "en curso"})`).join("<br>");
-        div.innerHTML = `
-          <div class="entry-top">
-            <div>
-              <div class="entry-date">${prettyDate(day.date)}</div>
-              <div class="small">${day.date} · ${getScheduleTextForDate(day.date)} · ${open ? "con entrada abierta" : "cerrado"}</div>
-            </div>
-            <button class="btn btn-danger" style="width:auto;padding:10px 12px;border-radius:14px;" data-delete-day="${day.date}">Borrar día</button>
-          </div>
-          <div class="entry-grid">
-            <div><div class="label">Tramos</div><div class="value" style="font-size:1rem">${day.segments.length}</div></div>
-            <div><div class="label">Trabajado / objetivo</div><div class="value" style="font-size:1rem">${durationToText(worked)} / ${durationToText(expected)}</div></div>
-            <div><div class="label">Extra</div><div class="value" style="font-size:1rem">${durationToText(extra)}</div></div>
-          </div>
-          <div class="small" style="margin-top:10px;line-height:1.6">${segs}</div>
-        `;
-        list.appendChild(div);
-      });
-      document.querySelectorAll("[data-delete-day]").forEach(btn => {
-        btn.addEventListener("click", () => {
-          const date = btn.getAttribute("data-delete-day");
-          state.days = state.days.filter(d => d.date !== date);
-          save(); render();
-        });
-      });
-    }
-
-    function render(){ updateSeasonUI(); renderToday(); renderMonthly(); renderHistory(); }
-
-    function markCheckIn(){
-      const date = todayISO(), day = ensureDay(date);
-      if(openSegment(day)){
-        alert("Ya tienes una entrada abierta. Primero marca la salida antes de crear otra entrada.");
-        return;
-      }
-      day.segments.push({in: nowTime(), out: ""});
-      save(); render();
-    }
-
-    function markCheckOut(){
-      const date = todayISO(), day = getDay(date);
-      const open = openSegment(day);
-      if(!open){
-        alert("No puedes marcar salida porque no hay ninguna entrada abierta.");
-        return;
-      }
-      open.out = nowTime();
-      save(); render();
-    }
-
-    function exportCSV(){
-      const selectedMonth = document.getElementById("selectedMonth").value;
-      const rows = [];
-      state.days.filter(d => monthKey(d.date) === selectedMonth).forEach(day => {
-        day.segments.forEach((seg, idx) => {
-          const segSeconds = secondsBetween(day.date, seg.in, seg.out);
-          rows.push([
-            day.date,
-            idx+1,
-            state.season === "summer" ? "Verano" : "Invierno",
-            getScheduleTextForDate(day.date),
-            seg.in || "",
-            seg.out || "",
-            seg.out ? segSeconds : "",
-            seg.out ? durationToText(segSeconds) : "Entrada abierta",
-            workedSeconds(day),
-            durationToText(workedSeconds(day)),
-            getExpectedSecondsForDate(day.date),
-            durationToText(getExpectedSecondsForDate(day.date)),
-            workedSeconds(day) - getExpectedSecondsForDate(day.date),
-            durationToText(workedSeconds(day) - getExpectedSecondsForDate(day.date))
-          ]);
-        });
-      });
-      const header = ["Fecha","Tramo","Tipo horario activo","Horario objetivo","Entrada","Salida","Segundos tramo","Duración tramo","Segundos día","Horas día","Segundos objetivo día","Horas objetivo día","Segundos extra día","Horas extra día"];
-      const csv = [header, ...rows].map(row => row.map(cell => `"${String(cell).replaceAll('"','""')}"`).join(";")).join("\n");
-      const blob = new Blob([csv], {type:"text/csv;charset=utf-8;"}), url = URL.createObjectURL(blob), a = document.createElement("a");
-      a.href = url; a.download = "fichajes_tramos_" + selectedMonth + "_" + state.season + ".csv"; a.click(); URL.revokeObjectURL(url);
-    }
-
-    function initTabs(){
-      document.querySelectorAll(".tab").forEach(tab => {
-        tab.addEventListener("click", () => {
-          document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
-          tab.classList.add("active");
-          const which = tab.getAttribute("data-tab");
-          document.getElementById("monthlyTab").classList.toggle("hidden", which !== "monthly");
-          document.getElementById("historyTab").classList.toggle("hidden", which !== "history");
-        });
-      });
-    }
-    function initMonth(){ document.getElementById("selectedMonth").value = todayISO().slice(0,7); }
-
-    document.getElementById("checkInBtn").addEventListener("click", markCheckIn);
-    document.getElementById("checkOutBtn").addEventListener("click", markCheckOut);
-    document.getElementById("selectedMonth").addEventListener("change", render);
-    document.getElementById("exportBtn").addEventListener("click", exportCSV);
-    document.getElementById("seasonToggle").addEventListener("change", e => { state.season = e.target.checked ? "summer" : "winter"; save(); render(); });
-
-    let deferredPrompt = null;
-    const installBtn = document.getElementById('installBtn');
-    const installText = document.getElementById('installText');
-    window.addEventListener('beforeinstallprompt', e => {
-      e.preventDefault(); deferredPrompt = e; installBtn.hidden = false;
-      installText.textContent = 'La app está lista para instalarse. Pulsa “Instalar app”.';
-    });
-    installBtn.addEventListener('click', async () => {
-      if(!deferredPrompt){ installText.textContent = 'Si no aparece el instalador, usa Chrome > menú ⋮ > Añadir a pantalla de inicio.'; return; }
-      deferredPrompt.prompt();
-      const choice = await deferredPrompt.userChoice;
-      installText.textContent = choice.outcome === 'accepted' ? 'Instalación aceptada.' : 'Instalación cancelada.';
-      installBtn.hidden = true; deferredPrompt = null;
-    });
-    window.addEventListener('appinstalled', () => { installText.textContent = 'La app ya está instalada.'; installBtn.hidden = true; });
-
-    load(); initMonth(); initTabs(); render();
+    const REPO_BASE='/fichajes-app2/';
+    if('serviceWorker' in navigator) window.addEventListener('load',()=>navigator.serviceWorker.register(REPO_BASE+'sw.js'));
+    const STORAGE_KEY='fichajes_movil_v8', LEGACY_KEYS=['fichajes_movil_v7','fichajes_movil_v6','fichajes_movil_v5','fichajes_movil_v4','fichajes_movil_v3','fichajes_movil_v2','fichajes_movil_v1','fichajes_diarios_app_v1'];
+    const SEASON_KEY='fichajes_tipo_horario_v1', SCHEDULE_KEY='fichajes_horarios_v2';
+    const defaults={winter:{monThu:{start:'08:30',end:'17:00'},fri:{start:'08:00',end:'15:00'}},summer:{monThu:{start:'08:00',end:'15:15'},fri:{start:'08:00',end:'15:00'}}};
+    const state={days:[],season:'winter',schedules:JSON.parse(JSON.stringify(defaults))};
+    const pad=n=>String(n).padStart(2,'0');
+    const todayISO=()=>{const d=new Date();return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())};
+    const nowTime=()=>{const d=new Date();return pad(d.getHours())+':'+pad(d.getMinutes())+':'+pad(d.getSeconds())};
+    const prettyDate=iso=>new Date(iso+'T00:00:00').toLocaleDateString('es-ES',{day:'2-digit',month:'2-digit',year:'numeric'});
+    const monthKey=d=>d.slice(0,7);
+    function durationToText(sec){const sign=sec<0?'-':'';let a=Math.abs(Math.round(sec||0));return sign+Math.floor(a/3600)+'h '+pad(Math.floor((a%3600)/60))+'min '+pad(a%60)+'s'}
+    function secondsBetween(date,a,b){if(!a||!b)return 0;return Math.max(0,Math.round((new Date(date+'T'+b)-new Date(date+'T'+a))/1000))}
+    function timeDiff(a,b){if(!a||!b)return 0;const [ah,am]=a.split(':').map(Number),[bh,bm]=b.split(':').map(Number);return Math.max(0,(bh*60+bm-ah*60-am)*60)}
+    function inferLegacySeason(date){return date>='2026-09-01'&&date<='2026-09-13'?'summer':date>='2026-09-14'?'winter':state.season}
+    function scheduleSnapshot(date,season){const day=new Date(date+'T00:00:00').getDay(), cfg=state.schedules[season]; if(day>=1&&day<=4)return {...cfg.monThu};if(day===5)return {...cfg.fri};return {start:'',end:''}}
+    function normalizeDay(x){const date=x.date||todayISO();let segments=Array.isArray(x.segments)?x.segments.map(q=>({in:q.in||q.checkIn||'',out:q.out||q.checkOut||''})):(x.checkIn||x.checkOut?[{in:x.checkIn||'',out:x.checkOut||''}]:[]);const season=x.season||inferLegacySeason(date);const target=x.target&&typeof x.target==='object'?x.target:scheduleSnapshot(date,season);return {date,season,target,segments}}
+    function save(){localStorage.setItem(STORAGE_KEY,JSON.stringify({days:state.days}));localStorage.setItem(SEASON_KEY,state.season);localStorage.setItem(SCHEDULE_KEY,JSON.stringify(state.schedules))}
+    function load(){try{const sc=JSON.parse(localStorage.getItem(SCHEDULE_KEY)||'null');if(sc?.winter&&sc?.summer)state.schedules=sc}catch(e){};const ss=localStorage.getItem(SEASON_KEY);if(ss==='summer'||ss==='winter')state.season=ss;let raw=localStorage.getItem(STORAGE_KEY);if(!raw){for(const k of LEGACY_KEYS){if(localStorage.getItem(k)){raw=localStorage.getItem(k);break}}}if(raw)try{const p=JSON.parse(raw),arr=p.days||p.entries||[];state.days=arr.map(normalizeDay)}catch(e){};sortDays();save()}
+    function sortDays(){state.days.sort((a,b)=>b.date.localeCompare(a.date))}
+    const getDay=date=>state.days.find(d=>d.date===date);
+    function ensureDay(date){let d=getDay(date);if(!d){const season=state.season;d={date,season,target:scheduleSnapshot(date,season),segments:[]};state.days.push(d);sortDays()}return d}
+    const openSegment=d=>(d?.segments||[]).find(x=>x.in&&!x.out);
+    const workedSeconds=d=>(d?.segments||[]).reduce((s,x)=>s+secondsBetween(d.date,x.in,x.out),0);
+    const expectedSeconds=d=>timeDiff(d.target?.start,d.target?.end);
+    const targetText=d=>d.target?.start&&d.target?.end?d.target.start+'–'+d.target.end:'Sin horario objetivo';
+    function updateSeasonUI(){const summer=state.season==='summer',cfg=state.schedules[state.season];seasonToggle.checked=summer;seasonLabel.textContent=summer?'Horario de verano':'Horario de invierno';seasonLabel.className='season-badge '+(summer?'summer':'winter');monThuStart.value=cfg.monThu.start;monThuEnd.value=cfg.monThu.end;friStart.value=cfg.fri.start;friEnd.value=cfg.fri.end;activeScheduleText.textContent='L-J '+cfg.monThu.start+'–'+cfg.monThu.end+' · V '+cfg.fri.start+'–'+cfg.fri.end}
+    function renderToday(){const date=todayISO(),d=getDay(date),open=openSegment(d),worked=workedSeconds(d),expected=d?expectedSeconds(d):timeDiff(scheduleSnapshot(date,state.season).start,scheduleSnapshot(date,state.season).end);todayDate.textContent=prettyDate(date)+' · '+(d?targetText(d):(scheduleSnapshot(date,state.season).start?targetText({target:scheduleSnapshot(date,state.season)}):'Sin horario objetivo'));todayOpenIn.textContent=open?open.in:'—';todayClosedCount.textContent=String((d?.segments||[]).filter(x=>x.in&&x.out).length);todayWorked.textContent=worked?durationToText(worked):'—';todayTarget.textContent=durationToText(expected);todayExtra.textContent=worked?durationToText(worked-expected):'—';savedCount.textContent=String(state.days.length);todayStatus.className='pill';if(open){todayStatus.textContent='Entrada abierta';todayStatus.classList.add('warn')}else if(d?.segments?.length){todayStatus.textContent='Sin entrada abierta';todayStatus.classList.add('ok')}else todayStatus.textContent='Pendiente de entrada';todayNotice.classList.toggle('hidden',!open);todayNotice.textContent=open?'Tienes una entrada abierta desde las '+open.in+'. La siguiente salida cerrará ese tramo.':'';todaySegments.innerHTML=d?.segments?.length?d.segments.map((x,i)=>`<div class="segment"><div><div class="label">Entrada ${i+1}</div><div class="value">${x.in||'—'}</div></div><div><div class="label">Salida ${i+1}</div><div class="value">${x.out||'Abierta'}</div></div><div><div class="label">Duración</div><div class="value">${x.out?durationToText(secondsBetween(d.date,x.in,x.out)):'En curso'}</div></div><button class="btn btn-danger" style="padding:10px" data-del-today="${i}">Borrar</button></div>`).join(''):'<div class="entry"><div class="muted">Aún no hay tramos registrados hoy.</div></div>';document.querySelectorAll('[data-del-today]').forEach(b=>b.onclick=()=>{d.segments.splice(+b.dataset.delToday,1);if(!d.segments.length)state.days=state.days.filter(q=>q.date!==d.date);save();render()})}
+    function renderMonthly(){const m=selectedMonth.value,days=state.days.filter(d=>monthKey(d.date)===m),worked=days.reduce((s,d)=>s+workedSeconds(d),0),expected=days.reduce((s,d)=>s+expectedSeconds(d),0),extra=worked-expected,n=days.filter(d=>workedSeconds(d)>0).length;mDays.textContent=days.length;mWorked.textContent=durationToText(worked);mExpected.textContent=durationToText(expected);mExtra.textContent=durationToText(extra);mAvg.textContent=durationToText(n?Math.round(worked/n):0);mBalance.textContent=(extra>=0?'Superávit de ':'Déficit de ')+durationToText(extra)}
+    function renderHistory(){historyList.innerHTML='';if(!state.days.length){historyList.innerHTML='<div class="entry muted">Aún no hay fichajes guardados.</div>';return}state.days.forEach(d=>{const w=workedSeconds(d),e=expectedSeconds(d),box=document.createElement('div');box.className='entry';box.innerHTML=`<div class="entry-top"><div><div class="entry-date">${prettyDate(d.date)}</div><div class="small">${d.season==='summer'?'Verano':'Invierno'} · objetivo ${targetText(d)}</div></div><button class="btn btn-danger mini-btn" data-delete-day="${d.date}">Borrar día</button></div><div class="entry-grid"><div><div class="label">Trabajado</div><div class="value">${durationToText(w)}</div></div><div><div class="label">Objetivo</div><div class="value">${durationToText(e)}</div></div><div><div class="label">Extra</div><div class="value">${durationToText(w-e)}</div></div></div><div class="edit-row"><div class="label">Corregir horario objetivo de este día</div><div class="time-pair"><input type="time" value="${d.target.start}" data-target-start="${d.date}"><input type="time" value="${d.target.end}" data-target-end="${d.date}"></div></div><div class="edit-row"><div class="label">Entradas y salidas — puedes completar o corregir horas</div>${d.segments.map((x,i)=>`<div class="segment"><input type="time" step="1" value="${x.in}" data-in="${d.date}|${i}"><input type="time" step="1" value="${x.out}" data-out="${d.date}|${i}"><div class="small">${x.in&&x.out?durationToText(secondsBetween(d.date,x.in,x.out)):'Incompleto'}</div><button class="btn btn-danger mini-btn" data-del-seg="${d.date}|${i}">Borrar</button></div>`).join('')}<button class="btn btn-secondary" style="margin-top:10px" data-add-seg="${d.date}">+ Añadir entrada/salida olvidada</button></div>`;historyList.appendChild(box)});bindHistory()}
+    function bindHistory(){document.querySelectorAll('[data-delete-day]').forEach(b=>b.onclick=()=>{state.days=state.days.filter(d=>d.date!==b.dataset.deleteDay);save();render()});document.querySelectorAll('[data-add-seg]').forEach(b=>b.onclick=()=>{getDay(b.dataset.addSeg).segments.push({in:'',out:''});save();render()});document.querySelectorAll('[data-del-seg]').forEach(b=>b.onclick=()=>{const [date,i]=b.dataset.delSeg.split('|');getDay(date).segments.splice(+i,1);save();render()});document.querySelectorAll('[data-in],[data-out]').forEach(el=>el.onchange=()=>{const key=el.dataset.in||el.dataset.out,[date,i]=key.split('|'),seg=getDay(date).segments[+i];if(el.dataset.in!==undefined)seg.in=el.value;else seg.out=el.value;save();render()});document.querySelectorAll('[data-target-start],[data-target-end]').forEach(el=>el.onchange=()=>{const date=el.dataset.targetStart||el.dataset.targetEnd,d=getDay(date);if(el.dataset.targetStart!==undefined)d.target.start=el.value;else d.target.end=el.value;save();render()})}
+    function render(){updateSeasonUI();renderToday();renderMonthly();renderHistory()}
+    function markCheckIn(){const d=ensureDay(todayISO());if(openSegment(d)){alert('Ya tienes una entrada abierta. Primero marca la salida.');return}d.segments.push({in:nowTime(),out:''});save();render()}
+    function markCheckOut(){const d=getDay(todayISO()),o=openSegment(d);if(!o){alert('No puedes marcar salida porque no hay ninguna entrada abierta.');return}o.out=nowTime();save();render()}
+    function updateSchedule(){const cfg=state.schedules[state.season];cfg.monThu={start:monThuStart.value,end:monThuEnd.value};cfg.fri={start:friStart.value,end:friEnd.value};save();render()}
+    function exportCSV(){const m=selectedMonth.value,rows=[];state.days.filter(d=>monthKey(d.date)===m).forEach(d=>d.segments.forEach((x,i)=>rows.push([d.date,i+1,d.season==='summer'?'Verano':'Invierno',targetText(d),x.in,x.out,x.in&&x.out?durationToText(secondsBetween(d.date,x.in,x.out)):'',durationToText(workedSeconds(d)),durationToText(expectedSeconds(d)),durationToText(workedSeconds(d)-expectedSeconds(d))])));const header=['Fecha','Tramo','Horario archivado','Horario objetivo','Entrada','Salida','Duración tramo','Total día','Objetivo día','Extra día'];const csv=[header,...rows].map(r=>r.map(c=>'"'+String(c??'').replaceAll('"','""')+'"').join(';')).join('\n'),blob=new Blob([csv],{type:'text/csv;charset=utf-8;'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='fichajes_'+m+'.csv';a.click();URL.revokeObjectURL(url)}
+    checkInBtn.onclick=markCheckIn;checkOutBtn.onclick=markCheckOut;exportBtn.onclick=exportCSV;selectedMonth.onchange=render;seasonToggle.onchange=e=>{state.season=e.target.checked?'summer':'winter';save();render()};[monThuStart,monThuEnd,friStart,friEnd].forEach(x=>x.onchange=updateSchedule);document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{document.querySelectorAll('.tab').forEach(q=>q.classList.remove('active'));t.classList.add('active');monthlyTab.classList.toggle('hidden',t.dataset.tab!=='monthly');historyTab.classList.toggle('hidden',t.dataset.tab!=='history')});
+    let deferredPrompt=null;window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredPrompt=e;installBtn.hidden=false;installText.textContent='La app está lista para instalarse. Pulsa “Instalar app”.'});installBtn.onclick=async()=>{if(!deferredPrompt)return;deferredPrompt.prompt();await deferredPrompt.userChoice;deferredPrompt=null;installBtn.hidden=true};
+    load();selectedMonth.value=todayISO().slice(0,7);render();
   </script>
 </body>
 </html>
